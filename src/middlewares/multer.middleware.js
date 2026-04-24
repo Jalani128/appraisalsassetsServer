@@ -1,7 +1,9 @@
 import multer from "multer";
 import fs from "fs";
+import os from "os";
+import path from "path";
 
-const tempDir = "./public/temp";
+const tempDir = path.join(os.tmpdir(), "appraisalsassets-upload-temp");
 
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
