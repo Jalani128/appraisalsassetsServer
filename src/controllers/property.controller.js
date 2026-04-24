@@ -1,0 +1,521 @@
+import Property from "../models/Property.js";
+import Inquiry from "../models/Inquiry.js";
+import { uploadToCloudinary } from "../utils/cloudinary.js";
+
+const parseImageUrls = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+  } catch (error) {
+    // Fall back to comma/newline separated text
+  }
+
+  return String(value)
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+/**
+ * Amenities may arrive as JSON array string, repeated form fields (array),
+ * or a single value like "gym" — never JSON.parse a bare token.
+ */
+const parseAmenities = (amenities) => {
+  if (amenities == null || amenities === "") return [];
+  if (Array.isArray(amenities)) {
+    return amenities.map((a) => String(a).trim()).filter(Boolean);
+  }
+  if (typeof amenities !== "string") return [];
+  const trimmed = amenities.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (parsed != null && parsed !== "") return [String(parsed)];
+  } catch {
+    // Not JSON: single amenity key or comma-separated
+  }
+  if (trimmed.includes(",")) {
+    return trimmed
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [trimmed];
+};
+
+const toLabel = (value) =>
+  String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const categoryLabels = {
+  for_sale: "For Sale",
+  for_rent: "For Rent",
+  off_plan: "Off-Plan",
+  commercial: "Commercial",
+};
+
+const propertyTypeLabels = {
+  apartment: "Apartment",
+  villa: "Villa",
+  townhouse: "Townhouse",
+  penthouse: "Penthouse",
+  office: "Office",
+  retail: "Retail",
+  warehouse: "Warehouse",
+};
+
+const statusLabels = {
+  available: "Available",
+  sold: "Sold",
+  rented: "Rented",
+  reserved: "Reserved",
+};
+
+const locationLabels = {
+  dubai_marina: "Dubai Marina",
+  downtown_dubai: "Downtown Dubai",
+  bussiness_bay: "Business Bay",
+  jvc: "JVC",
+  palm_jumeirah: "Palm Jumeirah",
+  dubai_hills: "Dubai Hills",
+  arabian_ranches: "Arabian Ranches",
+  emaar_beachfront: "Emaar Beachfront",
+  blue_waters: "Bluewaters",
+  city_walks: "City Walk",
+};
+
+const inquiryTypeLabels = {
+  general: "General Inquiry",
+  viewing: "Schedule Viewing",
+  valuation: "Property Valuation",
+  investment: "Investment Advisory",
+};
+
+// Default option values when schema has no enums (for form-options API consistency)
+const DEFAULT_CATEGORIES = Object.keys(categoryLabels);
+const DEFAULT_PROPERTY_TYPES = Object.keys(propertyTypeLabels);
+const DEFAULT_STATUSES = Object.keys(statusLabels);
+const DEFAULT_LOCATIONS = Object.keys(locationLabels);
+const DEFAULT_AMENITIES = [
+  "swimming_pool", "gym", "parking", "balcony", "sea_view", "city_view",
+  "concierge", "security", "garden", "beach_access", "kids_play_area",
+  "bbq_area", "sauna", "jacuzzi", "maid_room",
+];
+
+// GET FORM OPTIONS
+export const getPropertyFormOptions = async (req, res) => {
+  try {
+    const categoryEnum = Property.schema.path("category")?.enumValues || DEFAULT_CATEGORIES;
+    const propertyTypeEnum = Property.schema.path("propertyType")?.enumValues || DEFAULT_PROPERTY_TYPES;
+    const statusEnum = Property.schema.path("status")?.enumValues || DEFAULT_STATUSES;
+    const amenitiesEnum =
+      Property.schema.path("amenities")?.embeddedSchemaType?.enumValues ||
+      Property.schema.path("amenities")?.caster?.enumValues ||
+      DEFAULT_AMENITIES;
+    const locationEnum = Property.schema.path("location")?.enumValues || DEFAULT_LOCATIONS;
+    const inquiryTypeEnum = Inquiry.schema.path("inquiry_type")?.enumValues || [];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        categories: categoryEnum.map((value) => ({
+          value,
+          label: categoryLabels[value] || toLabel(value),
+        })),
+        propertyTypes: propertyTypeEnum.map((value) => ({
+          value,
+          label: propertyTypeLabels[value] || toLabel(value),
+        })),
+        statuses: statusEnum.map((value) => ({
+          value,
+          label: statusLabels[value] || toLabel(value),
+        })),
+        amenities: amenitiesEnum.map((value) => ({
+          value,
+          label: toLabel(value),
+        })),
+        locations: locationEnum.map((value) => ({
+          value,
+          label: locationLabels[value] || toLabel(value),
+        })),
+        inquiryTypes: (inquiryTypeEnum.length ? inquiryTypeEnum : Object.keys(inquiryTypeLabels)).map((value) => ({
+          value,
+          label: inquiryTypeLabels[value] || toLabel(value),
+        })),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch form options",
+      error: error.message,
+    });
+  }
+};
+
+// CREATE PROPERTY
+export const createProperty = async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      category,
+      propertyType,
+      status,
+      price,
+      sizeSqft,
+      referenceNumber,
+      bedrooms,
+      bathrooms,
+      amenities,
+      imageUrls,
+      location,
+      phone,
+      whatsAppNumber,
+      contactEmail,
+      developerName,
+      developerSlug,
+      isFeatured,
+      isActive,
+    } = req.body;
+
+    // Validate required fields
+    if (
+      !title ||
+      !description ||
+      !propertyType ||
+      !price ||
+      !sizeSqft ||
+      !location ||
+      !phone ||
+      !whatsAppNumber
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide all required fields",
+      });
+    }
+
+    // Handle image uploads
+    let images = [];
+    if (req.files && req.files.length > 0) {
+      try {
+        const uploadPromises = req.files.map((file) =>
+          uploadToCloudinary(file.path, "properties"),
+        );
+        const uploadResults = await Promise.all(uploadPromises);
+        images = uploadResults.map((result, index) => ({
+          url: result.secure_url,
+          isCover: index === 0, // First image is cover
+        }));
+      } catch (uploadError) {
+        console.error("Image upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload images",
+          error: uploadError.message || uploadError,
+        });
+      }
+    }
+
+    // Merge direct image URLs from admin form
+    const directImageUrls = parseImageUrls(imageUrls);
+    if (directImageUrls.length > 0) {
+      const urlImages = directImageUrls.map((url) => ({ url, isCover: false }));
+      images = [...images, ...urlImages];
+      if (images.length > 0 && !images.some((img) => img.isCover)) {
+        images[0].isCover = true;
+      }
+    }
+
+    // Auto-generate reference number if not provided
+    const finalReferenceNumber =
+      referenceNumber ||
+      `LUX-${propertyType.substring(0, 2).toUpperCase()}-${Date.now().toString().slice(-6)}`;
+
+    const parsedAmenities = parseAmenities(amenities);
+
+    const property = await Property.create({
+      title,
+      description,
+      category: category || "for_sale",
+      propertyType,
+      status: status || "available",
+      price: {
+        amount: parseFloat(price),
+        currency: "AED",
+      },
+      sizeSqft: parseFloat(sizeSqft),
+      referenceNumber: finalReferenceNumber,
+      bedrooms: bedrooms ? parseInt(bedrooms) : 0,
+      bathrooms: bathrooms ? parseInt(bathrooms) : 0,
+      amenities: parsedAmenities,
+      images,
+      location,
+      phone,
+      whatsAppNumber,
+      contactEmail: contactEmail || "",
+      developerName: category === "off_plan" ? developerName || "" : "",
+      developerSlug: category === "off_plan" ? developerSlug || "" : "",
+      isFeatured: isFeatured === "true" || isFeatured === true,
+      isActive: isActive === "true" || isActive === true,
+      createdBy: req.admin._id,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Property created successfully",
+      property,
+    });
+  } catch (error) {
+    console.error("Create property error:", error);
+    if (error.code === 11000) {
+      const key = error.keyPattern
+        ? Object.keys(error.keyPattern).join(", ")
+        : "field";
+      const dropHints = {
+        phone: "db.properties.dropIndex('phone_1')",
+        whatsAppNumber: "db.properties.dropIndex('whatsAppNumber_1')",
+      };
+      const hint = dropHints[key];
+      return res.status(409).json({
+        success: false,
+        message: hint
+          ? `Duplicate ${key} on database. Restart the server once to drop the legacy unique index, or run: ${hint}`
+          : `Duplicate value for unique field: ${key}`,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+// GET ALL PROPERTIES
+export const getProperties = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      category,
+      status,
+      location,
+      isFeatured,
+      developerSlug,
+      activeOnly,
+    } = req.query;
+
+    console.log("Get properties query:", req.query);
+
+    const skip = (page - 1) * limit;
+
+    // Build filter
+    const filter = {};
+    if (category) filter.category = category;
+    if (status) filter.status = status;
+    if (location) filter.location = location;
+    if (isFeatured) filter.isFeatured = isFeatured === "true";
+    if (developerSlug) filter.developerSlug = developerSlug;
+    // Public/developer listings: only active unless admin passes activeOnly=false
+    if (activeOnly === "true" || activeOnly === true) {
+      filter.isActive = true;
+    }
+
+    console.log("Built filter:", filter);
+
+    const properties = await Property.find(filter)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email");
+
+    console.log("Found properties:", properties.length);
+
+    const total = await Property.countDocuments(filter);
+    console.log("Total properties:", total);
+
+    return res.status(200).json({
+      success: true,
+      message: "Properties fetched successfully",
+      properties,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get properties error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// GET SINGLE PROPERTY
+export const getProperty = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id).populate(
+      "createdBy",
+      "name email",
+    );
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: "Property not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Property fetched successfully",
+      property,
+    });
+  } catch (error) {
+    console.error("Get property error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// UPDATE PROPERTY
+export const updateProperty = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: "Property not found",
+      });
+    }
+
+    // Handle image uploads if new images are provided
+    if (req.files && req.files.length > 0) {
+      try {
+        const uploadPromises = req.files.map((file) =>
+          uploadToCloudinary(file.path, "properties"),
+        );
+        const uploadResults = await Promise.all(uploadPromises);
+        const newImages = uploadResults.map((result, index) => ({
+          url: result.secure_url,
+          isCover: index === 0 && property.images.length === 0,
+        }));
+        req.body.images = [...property.images, ...newImages];
+      } catch (uploadError) {
+        console.error("Image upload error:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload images",
+          error: uploadError.message || uploadError,
+        });
+      }
+    }
+
+    // Handle direct image URLs append
+    if (req.body.imageUrls) {
+      const directImageUrls = parseImageUrls(req.body.imageUrls);
+      if (directImageUrls.length > 0) {
+        const urlImages = directImageUrls.map((url) => ({ url, isCover: false }));
+        const existingImages = req.body.images || property.images || [];
+        req.body.images = [...existingImages, ...urlImages];
+        if (req.body.images.length > 0 && !req.body.images.some((img) => img.isCover)) {
+          req.body.images[0].isCover = true;
+        }
+      }
+    }
+
+    // Handle price update
+    if (req.body.price && typeof req.body.price === "string") {
+      req.body.price = {
+        amount: parseFloat(req.body.price),
+        currency: "AED",
+      };
+    }
+
+    if (req.body.amenities != null) {
+      req.body.amenities = parseAmenities(req.body.amenities);
+    }
+
+    // Keep developer fields aligned with off-plan category only
+    if (req.body.category && req.body.category !== "off_plan") {
+      req.body.developerName = "";
+      req.body.developerSlug = "";
+    }
+
+    const updatedProperty = await Property.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).populate("createdBy", "name email");
+
+    return res.status(200).json({
+      success: true,
+      message: "Property updated successfully",
+      property: updatedProperty,
+    });
+  } catch (error) {
+    console.error("Update property error:", error);
+    if (error.code === 11000) {
+      const key = error.keyPattern
+        ? Object.keys(error.keyPattern).join(", ")
+        : "field";
+      const dropHints = {
+        phone: "db.properties.dropIndex('phone_1')",
+        whatsAppNumber: "db.properties.dropIndex('whatsAppNumber_1')",
+      };
+      const hint = dropHints[key];
+      return res.status(409).json({
+        success: false,
+        message: hint
+          ? `Duplicate ${key}. Restart server to drop legacy index, or: ${hint}`
+          : `Duplicate value for unique field: ${key}`,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+// DELETE PROPERTY
+export const deleteProperty = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: "Property not found",
+      });
+    }
+
+    await Property.findByIdAndDelete(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Property deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete property error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
