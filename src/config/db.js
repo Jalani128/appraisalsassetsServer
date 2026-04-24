@@ -41,9 +41,11 @@ const connectDB = async () => {
   } catch (error) {
     console.error(`MongoDB connection failed: ${error.message}`);
     if (error.message.includes("Atlas")) {
-      console.error("Ensure your IP is whitelisted in MongoDB Atlas: https://www.mongodb.com/docs/atlas/security-whitelist/");
+      console.error(
+        "Ensure your IP is whitelisted in MongoDB Atlas: https://www.mongodb.com/docs/atlas/security-whitelist/",
+      );
     }
-    // Don't exit - let server start anyway
+    throw error;
   }
 };
 
