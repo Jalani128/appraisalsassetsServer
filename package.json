@@ -2,10 +2,10 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "dev": "nodemon app.js",
+    "start": "node app.js",
     "setup-admin": "node src/scripts/setupAdmin.js",
     "setup-admin:force": "node src/scripts/setupAdmin.js --force",
     "seed-testimonials": "node src/scripts/seedTestimonials.js",

@@ -2,17 +2,18 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import passport from "passport";
-import "./config/google.js"; // Initialize Google strategy
-import authRoutes from "./routes/auth.routes.js";
-import propertyRoutes from "./routes/property.routes.js";
-import dashboardRoutes from "./routes/dashboard.routes.js";
-import testimonialRoutes from "./routes/testimonial.routes.js";
-import inquiryRoutes from "./routes/inquiry.routes.js";
-import blogRoutes from "./routes/blog.routes.js";
-import contentRoutes from "./routes/content.routes.js";
-import subscriberRoutes from "./routes/subscriber.routes.js";
-import developerRoutes from "./routes/developer.routes.js";
-import settingsRoutes from "./routes/settings.routes.js";
+import "./src/config/google.js"; // Initialize Google strategy
+import authRoutes from "./src/routes/auth.routes.js";
+import propertyRoutes from "./src/routes/property.routes.js";
+import dashboardRoutes from "./src/routes/dashboard.routes.js";
+import testimonialRoutes from "./src/routes/testimonial.routes.js";
+import inquiryRoutes from "./src/routes/inquiry.routes.js";
+import blogRoutes from "./src/routes/blog.routes.js";
+import contentRoutes from "./src/routes/content.routes.js";
+import subscriberRoutes from "./src/routes/subscriber.routes.js";
+import developerRoutes from "./src/routes/developer.routes.js";
+import settingsRoutes from "./src/routes/settings.routes.js";
+import connectDB from "./src/config/db.js";
 
 const app = express();
 
@@ -53,6 +54,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // Handle preflight with same origin policy
 
+connectDB()
+
 app.get("/", (req, res) => {
   return res.status(200).json({
     success: true,
@@ -81,5 +84,9 @@ app.use("/api/content", contentRoutes);
 app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/developers", developerRoutes);
 app.use("/api/settings", settingsRoutes);
+
+app.listen(4001,()=>{
+  console.log("Server is running on port 4001");
+})
 
 export default app;
