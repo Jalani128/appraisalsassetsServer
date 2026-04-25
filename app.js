@@ -18,37 +18,36 @@ import connectDB from "./src/config/db.js";
 
 const app = express();
 
-// Define allowed origins
-const allowedOrigins = [
-  "https://appraisalsassets-client-delta.vercel.app",
-  "https://www.assetsappraisals.com",
-  "https://assetsappraisals.com",
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:3001",
-  process.env.FRONTEND_URL,
-].filter(Boolean);
+// CORS Configuration - Simple and explicit
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    "https://appraisalsassets-client-delta.vercel.app",
+    "https://www.assetsappraisals.com",
+    "https://assetsappraisals.com",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+  ];
 
-// CORS Configuration - MUST be BEFORE other middleware
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow for preflight, restrict only on request
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
-  exposedHeaders: ["Content-Range", "X-Content-Range"],
-  maxAge: 86400,
-};
-
-// Apply CORS FIRST before any other middleware
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+  const origin = req.headers.origin;
+  
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  }
+  
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, X-Requested-With");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
 
 // Passport middleware
 app.use(passport.initialize());
@@ -57,7 +56,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-connectDB();
+// Initialize database (non-blocking)
+connectDB().catch(err => {
+  console.error("Database connection failed:", err.message);
+});
 
 app.get("/", (req, res) => {
   return res.status(200).json({
@@ -88,11 +90,19 @@ app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/developers", developerRoutes);
 app.use("/api/settings", settingsRoutes);
 
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Error:", err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+  });
+});
+
 const __filename = fileURLToPath(import.meta.url);
 
 if (process.argv[1] === __filename) {
   const PORT = process.env.PORT || 4001;
-  connectDB();
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
