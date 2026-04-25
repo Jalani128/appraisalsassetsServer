@@ -4,7 +4,8 @@ import connectDB from "../src/config/db.js";
 // Connect to database on startup (serverless function)
 const dbConnected = connectDB().catch((err) => {
   console.error("Database connection failed:", err.message);
-  throw err;
+  // Don't throw, just log - middleware will handle unavailable DB
+  return Promise.reject(err); // Keep as rejected promise
 });
 
 // Ensure DB connection before handling requests
