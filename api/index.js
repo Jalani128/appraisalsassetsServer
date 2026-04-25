@@ -1,7 +1,7 @@
 import app from "../app.js";
 import connectDB from "../src/config/db.js";
 
-// Connect to database on startup (serverless function)
+// Connect to database once for Vercel serverless
 connectDB().catch((err) => {
   console.error("Database connection failed:", err.message);
 });

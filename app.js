@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import passport from "passport";
+import { fileURLToPath } from "url";
 import "./src/config/google.js"; // Initialize Google strategy
 import authRoutes from "./src/routes/auth.routes.js";
 import propertyRoutes from "./src/routes/property.routes.js";
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 const allowedOrigins = [
+  FRONTEND_URL,
   "https://appraisalsassets-client-delta.vercel.app",
   "https://www.assetsappraisals.com",
   "https://assetsappraisals.com",
@@ -36,16 +38,20 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const corsOptions = {
-  origin: true, // 
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error("CORS policy: Origin not allowed"));
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin"],
 };
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // Handle preflight with same origin policy
 
-connectDB()
+connectDB();
 
 app.get("/", (req, res) => {
   return res.status(200).json({
@@ -76,8 +82,14 @@ app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/developers", developerRoutes);
 app.use("/api/settings", settingsRoutes);
 
-app.listen(4001,()=>{
-  console.log("Server is running on port 4001");
-})
+const __filename = fileURLToPath(import.meta.url);
+
+if (process.argv[1] === __filename) {
+  const PORT = process.env.PORT || 4001;
+  connectDB();
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
 
 export default app;
