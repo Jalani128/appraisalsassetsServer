@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
 import cookieParser from "cookie-parser";
 import passport from "passport";
@@ -14,6 +16,7 @@ import subscriberRoutes from "./src/routes/subscriber.routes.js";
 import developerRoutes from "./src/routes/developer.routes.js";
 import settingsRoutes from "./src/routes/settings.routes.js";
 import connectDB from "./src/config/db.js";
+
 
 const app = express();
 

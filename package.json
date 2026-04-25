@@ -2,10 +2,10 @@
   "name": "appraisalsassets-server",
   "version": "1.0.0",
   "description": "",
-  "main": "app.js",
+  "main": "api/index.js",
   "scripts": {
     "dev": "nodemon app.js",
-    "start": "node app.js",
+    "start": "node api/index.js",
     "setup-admin": "node src/scripts/setupAdmin.js",
     "setup-admin:force": "node src/scripts/setupAdmin.js --force",
     "seed-testimonials": "node src/scripts/seedTestimonials.js",
