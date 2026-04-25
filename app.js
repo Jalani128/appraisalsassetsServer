@@ -14,7 +14,6 @@ import subscriberRoutes from "./src/routes/subscriber.routes.js";
 import developerRoutes from "./src/routes/developer.routes.js";
 import settingsRoutes from "./src/routes/settings.routes.js";
 import connectDB from "./src/config/db.js";
-import { createAdminIfNotExists } from "./src/scripts/setupAdmin.js";
 
 const app = express();
 
@@ -46,11 +45,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // Handle preflight with same origin policy
 
-connectDB().then(() => {
-  createAdminIfNotExists();
-}).catch((err) => {
-  console.error("DB connection failed:", err.message);
-});
+connectDB()
 
 app.get("/", (req, res) => {
   return res.status(200).json({
