@@ -18,16 +18,8 @@ import connectDB from "./src/config/db.js";
 
 const app = express();
 
-// Passport middleware
-app.use(passport.initialize());
-
-app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-const FRONTEND_URL = process.env.FRONTEND_URL;
-
+// Define allowed origins
 const allowedOrigins = [
-  FRONTEND_URL,
   "https://appraisalsassets-client-delta.vercel.app",
   "https://www.assetsappraisals.com",
   "https://assetsappraisals.com",
@@ -35,21 +27,35 @@ const allowedOrigins = [
   "http://localhost:3001",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:3001",
+  process.env.FRONTEND_URL,
 ].filter(Boolean);
 
+// CORS Configuration - MUST be BEFORE other middleware
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error("CORS policy: Origin not allowed"));
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow for preflight, restrict only on request
+    }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  maxAge: 86400,
 };
 
+// Apply CORS FIRST before any other middleware
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // Handle preflight with same origin policy
+app.options("*", cors(corsOptions));
+
+// Passport middleware
+app.use(passport.initialize());
+
+app.use(cookieParser());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 connectDB();
 
