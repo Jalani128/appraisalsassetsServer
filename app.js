@@ -26,7 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 const allowedOrigins = [
-  FRONTEND_URL,
+  "https://appraisalsassets-client-delta.vercel.app",
   "https://www.assetsappraisals.com",
   "https://assetsappraisals.com",
   "http://localhost:3000",
