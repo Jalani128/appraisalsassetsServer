@@ -1,15 +1,20 @@
 export default async function handler(req, res) {
-  // CORS sabse pehle
+  // ✅ Pehle origin declare karo
+  const origin = req.headers.origin || "";
+  const cleanOrigin = origin.replace(/\/$/, "");
+
   const allowedOrigins = [
-    "https://appraisalsassets-client-g2nn.vercel.app/",
+    "https://appraisalsassets-client-delta.vercel.app",
+    "https://appraisalsassets-client-g2nn.vercel.app",
     "https://www.assetsappraisals.com",
     "https://assetsappraisals.com",
     "http://localhost:3000",
     "http://localhost:3001",
   ];
 
-const cleanOrigin = origin ? origin.replace(/\/$/, "") : "";
-const allowedOrigin = allowedOrigins.includes(cleanOrigin) ? cleanOrigin : allowedOrigins[0];
+  const allowedOrigin = allowedOrigins.includes(cleanOrigin)
+    ? cleanOrigin
+    : allowedOrigins[0];
 
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
@@ -17,7 +22,7 @@ const allowedOrigin = allowedOrigins.includes(cleanOrigin) ? cleanOrigin : allow
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Vary", "Origin");
 
-  // Preflight
+  // ✅ Preflight pehle handle karo
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
@@ -27,9 +32,9 @@ const allowedOrigin = allowedOrigins.includes(cleanOrigin) ? cleanOrigin : allow
     return app(req, res);
   } catch (err) {
     console.error("CRASH:", err.message, err.stack);
-    return res.status(500).json({ 
-      success: false, 
-      message: err.message 
+    return res.status(500).json({
+      success: false,
+      message: err.message
     });
   }
 }
