@@ -8,8 +8,8 @@ export default async function handler(req, res) {
     "http://localhost:3001",
   ];
 
-  const origin = req.headers.origin;
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+const cleanOrigin = origin ? origin.replace(/\/$/, "") : "";
+const allowedOrigin = allowedOrigins.includes(cleanOrigin) ? cleanOrigin : allowedOrigins[0];
 
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
