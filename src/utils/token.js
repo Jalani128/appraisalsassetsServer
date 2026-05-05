@@ -10,10 +10,11 @@ export const generateAccessToken = (admin, options = {}) => {
 
   const expiresIn =
     options.expiresIn || process.env.JWT_ACCESS_SECRET_EXPIRY || "15m";
+  
   return jwt.sign(
     { id: admin._id, role: "admin" },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn },
+    { expiresIn }
   );
 };
 
@@ -26,6 +27,6 @@ export const generateRefreshToken = (admin) => {
   return jwt.sign(
     { id: admin._id, role: "admin" },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_SECRET_EXPIRY },
+    { expiresIn: process.env.JWT_REFRESH_SECRET_EXPIRY || "7d" } // ✅ Fixed
   );
 };
