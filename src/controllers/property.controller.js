@@ -135,18 +135,39 @@ const DEFAULT_AMENITIES = [
   "bbq_area", "sauna", "jacuzzi", "maid_room",
 ];
 
+const enumValuesOrDefault = (path, fallback) => {
+  const values = path?.enumValues;
+  return values?.length ? values : fallback;
+};
+
 // GET FORM OPTIONS
 export const getPropertyFormOptions = async (req, res) => {
   try {
-    const categoryEnum = Property.schema.path("category")?.enumValues || DEFAULT_CATEGORIES;
-    const propertyTypeEnum = Property.schema.path("propertyType")?.enumValues || DEFAULT_PROPERTY_TYPES;
-    const statusEnum = Property.schema.path("status")?.enumValues || DEFAULT_STATUSES;
-    const amenitiesEnum =
-      Property.schema.path("amenities")?.embeddedSchemaType?.enumValues ||
-      Property.schema.path("amenities")?.caster?.enumValues ||
-      DEFAULT_AMENITIES;
-    const locationEnum = Property.schema.path("location")?.enumValues || DEFAULT_LOCATIONS;
-    const inquiryTypeEnum = Inquiry.schema.path("inquiry_type")?.enumValues || [];
+    const categoryEnum = enumValuesOrDefault(
+      Property.schema.path("category"),
+      DEFAULT_CATEGORIES,
+    );
+    const propertyTypeEnum = enumValuesOrDefault(
+      Property.schema.path("propertyType"),
+      DEFAULT_PROPERTY_TYPES,
+    );
+    const statusEnum = enumValuesOrDefault(
+      Property.schema.path("status"),
+      DEFAULT_STATUSES,
+    );
+    const amenitiesPath = Property.schema.path("amenities");
+    const amenitiesEnum = enumValuesOrDefault(
+      amenitiesPath?.embeddedSchemaType || amenitiesPath?.caster,
+      DEFAULT_AMENITIES,
+    );
+    const locationEnum = enumValuesOrDefault(
+      Property.schema.path("location"),
+      DEFAULT_LOCATIONS,
+    );
+    const inquiryTypeEnum = enumValuesOrDefault(
+      Inquiry.schema.path("inquiry_type"),
+      Object.keys(inquiryTypeLabels),
+    );
 
     return res.status(200).json({
       success: true,
@@ -171,7 +192,7 @@ export const getPropertyFormOptions = async (req, res) => {
           value,
           label: locationLabels[value] || toLabel(value),
         })),
-        inquiryTypes: (inquiryTypeEnum.length ? inquiryTypeEnum : Object.keys(inquiryTypeLabels)).map((value) => ({
+        inquiryTypes: inquiryTypeEnum.map((value) => ({
           value,
           label: inquiryTypeLabels[value] || toLabel(value),
         })),
