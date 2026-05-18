@@ -3,6 +3,7 @@ import Inquiry from "../models/Inquiry.js";
 import {
   getCloudinaryAssetUrl,
   getCloudinaryConfigErrorMessage,
+  getCloudinaryPdfDownloadUrl,
   isCloudinaryConfigured,
   uploadMulterFile,
 } from "../utils/cloudinary.js";
@@ -62,10 +63,23 @@ async function uploadPropertyDocumentPdf(file) {
     );
   }
 
+  const fileName = file.originalname || "property-brochure.pdf";
   return {
     url,
-    fileName: file.originalname || "property-brochure.pdf",
+    fileName,
+    downloadUrl: getCloudinaryPdfDownloadUrl(url, fileName),
   };
+}
+
+function resolveBrochureFileName(property) {
+  const fromDoc = property.documentPdf?.fileName?.trim();
+  if (fromDoc) {
+    return fromDoc.toLowerCase().endsWith(".pdf") ? fromDoc : `${fromDoc}.pdf`;
+  }
+  const slug = (property.referenceNumber || property.title || "property")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 80);
+  return `${slug || "property-brochure"}.pdf`;
 }
 
 const parseAmenities = (amenities) => {
@@ -447,6 +461,59 @@ export const getProperties = async (req, res) => {
   }
 };
 
+// GET PROPERTY BROCHURE PDF (correct filename + Content-Disposition)
+export const downloadPropertyBrochure = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id).select(
+      "documentPdf title referenceNumber",
+    );
+
+    if (!property?.documentPdf?.url?.trim()) {
+      return res.status(404).json({
+        success: false,
+        message: "No brochure PDF available for this property",
+      });
+    }
+
+    const fileName = resolveBrochureFileName(property);
+    const sourceUrl =
+      property.documentPdf.downloadUrl?.trim() ||
+      getCloudinaryPdfDownloadUrl(property.documentPdf.url, fileName);
+
+    const upstream = await fetch(sourceUrl);
+    if (!upstream.ok) {
+      console.error(
+        "Brochure fetch failed:",
+        upstream.status,
+        sourceUrl,
+      );
+      return res.status(502).json({
+        success: false,
+        message: "Failed to retrieve PDF from storage",
+      });
+    }
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    const safeName = fileName.replace(/"/g, "");
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", String(buffer.length));
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Download brochure error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to download brochure",
+    });
+  }
+};
+
 // GET SINGLE PROPERTY
 export const getProperty = async (req, res) => {
   try {
@@ -462,10 +529,19 @@ export const getProperty = async (req, res) => {
       });
     }
 
+    const payload = property.toObject();
+    if (payload.documentPdf?.url?.trim()) {
+      const fileName = resolveBrochureFileName(payload);
+      payload.documentPdf.fileName = fileName;
+      payload.documentPdf.downloadUrl =
+        payload.documentPdf.downloadUrl?.trim() ||
+        getCloudinaryPdfDownloadUrl(payload.documentPdf.url, fileName);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Property fetched successfully",
-      property,
+      property: payload,
     });
   } catch (error) {
     console.error("Get property error:", error);

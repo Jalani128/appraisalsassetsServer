@@ -16,6 +16,7 @@ router.post(
 router.get("/", property.getProperties);
 router.get("/form-options", property.getPropertyFormOptions);
 
+router.get("/:id/brochure", property.downloadPropertyBrochure);
 router.get("/:id", property.getProperty);
 
 router.put(

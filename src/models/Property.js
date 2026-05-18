@@ -82,6 +82,7 @@ const propertySchema = new mongoose.Schema(
     documentPdf: {
       url: { type: String, default: "" },
       fileName: { type: String, default: "" },
+      downloadUrl: { type: String, default: "" },
     },
 
     location: {

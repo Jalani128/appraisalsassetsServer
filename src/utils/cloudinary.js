@@ -21,6 +21,45 @@ export const getCloudinaryConfigErrorMessage = () =>
 export const getCloudinaryAssetUrl = (result) =>
   result?.secure_url || result?.url || "";
 
+/** Safe public_id for raw PDF uploads (extension required for correct delivery). */
+export function buildPdfPublicId(originalname) {
+  let name = String(originalname || "property-brochure.pdf")
+    .replace(/^.*[\\/]/, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 80);
+  if (!name.toLowerCase().endsWith(".pdf")) {
+    name = `${name}.pdf`;
+  }
+  return `${Date.now()}_${name}`;
+}
+
+/** Force download with a friendly filename from Cloudinary raw URLs. */
+export function getCloudinaryPdfDownloadUrl(url, fileName = "property-brochure.pdf") {
+  if (!url) return "";
+  if (!url.includes("res.cloudinary.com")) {
+    return url;
+  }
+
+  const safeName = String(fileName || "property-brochure.pdf")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/"/g, "");
+  const withExt = safeName.toLowerCase().endsWith(".pdf") ? safeName : `${safeName}.pdf`;
+
+  if (url.includes("fl_attachment")) {
+    return url;
+  }
+
+  const marker = "/upload/";
+  const index = url.indexOf(marker);
+  if (index === -1) {
+    return url;
+  }
+
+  const prefix = url.slice(0, index + marker.length);
+  const rest = url.slice(index + marker.length);
+  return `${prefix}fl_attachment:${encodeURIComponent(withExt)}/${rest}`;
+}
+
 function buildUploadParams(folder, options = {}) {
   const resourceType = options.resourceType || "auto";
   const params = {
@@ -29,6 +68,12 @@ function buildUploadParams(folder, options = {}) {
     use_filename: Boolean(options.useFilename ?? true),
     unique_filename: Boolean(options.uniqueFilename ?? true),
   };
+
+  if (options.publicId) {
+    params.public_id = options.publicId;
+    params.use_filename = false;
+    params.unique_filename = false;
+  }
 
   if (options.format && resourceType !== "raw") {
     params.format = options.format;
@@ -109,12 +154,20 @@ export async function uploadMulterFile(file, folder = "properties", options = {}
     return null;
   }
 
+  const uploadOptions = { ...options };
+  if (uploadOptions.resourceType === "raw" && file.originalname) {
+    uploadOptions.publicId =
+      uploadOptions.publicId || buildPdfPublicId(file.originalname);
+    uploadOptions.useFilename = false;
+    uploadOptions.uniqueFilename = false;
+  }
+
   if (file.buffer?.length) {
-    return uploadBufferToCloudinary(file.buffer, folder, options);
+    return uploadBufferToCloudinary(file.buffer, folder, uploadOptions);
   }
 
   if (file.path) {
-    return uploadToCloudinary(file.path, folder, options);
+    return uploadToCloudinary(file.path, folder, uploadOptions);
   }
 
   return null;
