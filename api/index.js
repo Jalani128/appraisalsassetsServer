@@ -5,6 +5,7 @@ export default async function handler(req, res) {
 
   const allowedOrigins = [
     "https://appraisalsassets-client-g2nn.vercel.app",
+    "https://appraisalsassets-client-delta.vercel.app",
     "https://www.assetsappraisals.com",
     "https://assetsappraisals.com",
     "http://localhost:3000",

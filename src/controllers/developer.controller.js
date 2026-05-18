@@ -27,7 +27,6 @@ async function withPropertyCounts(developers) {
   const enriched = await Promise.all(
     list.map(async (developer) => {
       const projectsCount = await Property.countDocuments({
-        category: "off_plan",
         isActive: true,
         developerSlug: developer.slug,
       });

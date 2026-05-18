@@ -1,6 +1,16 @@
 import Property from "../models/Property.js";
 import Inquiry from "../models/Inquiry.js";
-import { uploadToCloudinary } from "../utils/cloudinary.js";
+import {
+  getCloudinaryAssetUrl,
+  getCloudinaryConfigErrorMessage,
+  isCloudinaryConfigured,
+  uploadMulterFile,
+} from "../utils/cloudinary.js";
+
+const isOffPlanCategory = (value = "") => {
+  const key = String(value).trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return key === "off_plan" || key === "offplan" || key.includes("off_plan");
+};
 
 const parseImageUrls = (value) => {
   if (!value) return [];
@@ -37,16 +47,23 @@ function getMulterPdfFile(files) {
 async function uploadPropertyDocumentPdf(file) {
   if (!file) return null;
 
-  const result = await uploadToCloudinary(file.path, "properties/documents", {
+  if (!isCloudinaryConfigured()) {
+    throw new Error(getCloudinaryConfigErrorMessage());
+  }
+
+  const result = await uploadMulterFile(file, "properties/documents", {
     resourceType: "raw",
   });
 
-  if (!result?.secure_url) {
-    return null;
+  const url = getCloudinaryAssetUrl(result);
+  if (!url) {
+    throw new Error(
+      "Cloudinary did not return a URL for the property PDF. Verify your Cloudinary account allows raw/PDF uploads.",
+    );
   }
 
   return {
-    url: result.secure_url,
+    url,
     fileName: file.originalname || "property-brochure.pdf",
   };
 }
@@ -256,7 +273,7 @@ export const createProperty = async (req, res) => {
     if (imageFiles.length > 0) {
       try {
         const uploadPromises = imageFiles.map((file) =>
-          uploadToCloudinary(file.path, "properties"),
+          uploadMulterFile(file, "properties", { resourceType: "image" }),
         );
         const uploadResults = await Promise.all(uploadPromises);
         images = uploadResults
@@ -279,20 +296,15 @@ export const createProperty = async (req, res) => {
     const pdfFile = getMulterPdfFile(req.files);
     if (pdfFile) {
       try {
-        const uploadedPdf = await uploadPropertyDocumentPdf(pdfFile);
-        if (!uploadedPdf) {
-          return res.status(500).json({
-            success: false,
-            message: "Failed to upload property PDF. Check Cloudinary configuration.",
-          });
-        }
-        documentPdf = uploadedPdf;
+        documentPdf = await uploadPropertyDocumentPdf(pdfFile);
       } catch (uploadError) {
         console.error("Property PDF upload error:", uploadError);
         return res.status(500).json({
           success: false,
-          message: "Failed to upload property PDF",
-          error: uploadError.message || uploadError,
+          message:
+            uploadError.message ||
+            "Failed to upload property PDF. Check Cloudinary configuration.",
+          error: uploadError.message || String(uploadError),
         });
       }
     }
@@ -335,8 +347,8 @@ export const createProperty = async (req, res) => {
       phone,
       whatsAppNumber,
       contactEmail: contactEmail || "",
-      developerName: category === "off_plan" ? developerName || "" : "",
-      developerSlug: category === "off_plan" ? developerSlug || "" : "",
+      developerName: isOffPlanCategory(category) ? developerName || "" : "",
+      developerSlug: isOffPlanCategory(category) ? developerSlug || "" : "",
       isFeatured: isFeatured === "true" || isFeatured === true,
       isActive: isActive === "true" || isActive === true,
       createdBy: req.admin._id,
@@ -481,7 +493,7 @@ export const updateProperty = async (req, res) => {
     if (imageFiles.length > 0) {
       try {
         const uploadPromises = imageFiles.map((file) =>
-          uploadToCloudinary(file.path, "properties"),
+          uploadMulterFile(file, "properties", { resourceType: "image" }),
         );
         const uploadResults = await Promise.all(uploadPromises);
         const newImages = uploadResults
@@ -508,20 +520,15 @@ export const updateProperty = async (req, res) => {
     const pdfFile = getMulterPdfFile(req.files);
     if (pdfFile) {
       try {
-        const uploadedPdf = await uploadPropertyDocumentPdf(pdfFile);
-        if (!uploadedPdf) {
-          return res.status(500).json({
-            success: false,
-            message: "Failed to upload property PDF. Check Cloudinary configuration.",
-          });
-        }
-        req.body.documentPdf = uploadedPdf;
+        req.body.documentPdf = await uploadPropertyDocumentPdf(pdfFile);
       } catch (uploadError) {
         console.error("Property PDF upload error:", uploadError);
         return res.status(500).json({
           success: false,
-          message: "Failed to upload property PDF",
-          error: uploadError.message || uploadError,
+          message:
+            uploadError.message ||
+            "Failed to upload property PDF. Check Cloudinary configuration.",
+          error: uploadError.message || String(uploadError),
         });
       }
     }
@@ -554,7 +561,7 @@ export const updateProperty = async (req, res) => {
     }
 
     // Keep developer fields aligned with off-plan category only
-    if (req.body.category && req.body.category !== "off_plan") {
+    if (req.body.category && !isOffPlanCategory(req.body.category)) {
       req.body.developerName = "";
       req.body.developerSlug = "";
     }

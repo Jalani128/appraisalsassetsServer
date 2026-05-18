@@ -14,13 +14,23 @@ const storage = multer.diskStorage({
     cb(null, tempDir);
   },
   filename: function (req, file, cb) {
-    cb(null, file.originalname);
+    const ext = path.extname(file.originalname).toLowerCase();
+    const base = path
+      .basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9-_]/g, "_")
+      .slice(0, 80);
+    const suffix =
+      ext || (file.fieldname === "documentPdf" ? ".pdf" : "");
+    cb(null, `${Date.now()}-${base || "file"}${suffix}`);
   },
 });
 
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === "documentPdf") {
-    if (file.mimetype === "application/pdf") {
+    const isPdf =
+      file.mimetype === "application/pdf" ||
+      /\.pdf$/i.test(file.originalname || "");
+    if (isPdf) {
       return cb(null, true);
     }
     return cb(new Error("Property document must be a PDF file"), false);
@@ -42,7 +52,14 @@ export const upload = multer({
   fileFilter,
 });
 
-export const propertyUpload = upload.fields([
+/** Memory storage works on Vercel serverless (/tmp disk uploads often fail). */
+const propertyStorage = multer.memoryStorage();
+
+export const propertyUpload = multer({
+  storage: propertyStorage,
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter,
+}).fields([
   { name: "images", maxCount: 20 },
   { name: "documentPdf", maxCount: 1 },
 ]);
