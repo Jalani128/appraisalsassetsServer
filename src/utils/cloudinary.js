@@ -33,31 +33,13 @@ export function buildPdfPublicId(originalname) {
   return `${Date.now()}_${name}`;
 }
 
-/** Force download with a friendly filename from Cloudinary raw URLs. */
-export function getCloudinaryPdfDownloadUrl(url, fileName = "property-brochure.pdf") {
+/** Strip broken fl_attachment segments; delivery filename is set by our API. */
+export function getCloudinaryPdfDeliveryUrl(url) {
   if (!url) return "";
   if (!url.includes("res.cloudinary.com")) {
     return url;
   }
-
-  const safeName = String(fileName || "property-brochure.pdf")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .replace(/"/g, "");
-  const withExt = safeName.toLowerCase().endsWith(".pdf") ? safeName : `${safeName}.pdf`;
-
-  if (url.includes("fl_attachment")) {
-    return url;
-  }
-
-  const marker = "/upload/";
-  const index = url.indexOf(marker);
-  if (index === -1) {
-    return url;
-  }
-
-  const prefix = url.slice(0, index + marker.length);
-  const rest = url.slice(index + marker.length);
-  return `${prefix}fl_attachment:${encodeURIComponent(withExt)}/${rest}`;
+  return url.replace(/\/fl_attachment:[^/]+\//, "/");
 }
 
 function buildUploadParams(folder, options = {}) {
@@ -70,12 +52,21 @@ function buildUploadParams(folder, options = {}) {
   };
 
   if (options.publicId) {
-    params.public_id = options.publicId;
+    let id = String(options.publicId).replace(/^.*\//, "");
+    if (resourceType === "raw") {
+      if (!id.toLowerCase().endsWith(".pdf")) {
+        id = `${id}.pdf`;
+      }
+      params.public_id = id;
+    } else {
+      params.public_id = id.replace(/\.pdf$/i, "");
+      if (options.format) {
+        params.format = options.format;
+      }
+    }
     params.use_filename = false;
     params.unique_filename = false;
-  }
-
-  if (options.format && resourceType !== "raw") {
+  } else if (options.format && resourceType !== "raw") {
     params.format = options.format;
   }
 

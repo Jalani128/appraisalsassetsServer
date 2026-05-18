@@ -3,7 +3,7 @@ import Inquiry from "../models/Inquiry.js";
 import {
   getCloudinaryAssetUrl,
   getCloudinaryConfigErrorMessage,
-  getCloudinaryPdfDownloadUrl,
+  getCloudinaryPdfDeliveryUrl,
   isCloudinaryConfigured,
   uploadMulterFile,
 } from "../utils/cloudinary.js";
@@ -67,7 +67,7 @@ async function uploadPropertyDocumentPdf(file) {
   return {
     url,
     fileName,
-    downloadUrl: getCloudinaryPdfDownloadUrl(url, fileName),
+    downloadUrl: getCloudinaryPdfDeliveryUrl(url),
   };
 }
 
@@ -476,11 +476,22 @@ export const downloadPropertyBrochure = async (req, res) => {
     }
 
     const fileName = resolveBrochureFileName(property);
-    const sourceUrl =
-      property.documentPdf.downloadUrl?.trim() ||
-      getCloudinaryPdfDownloadUrl(property.documentPdf.url, fileName);
+    const sourceUrl = getCloudinaryPdfDeliveryUrl(
+      property.documentPdf.url?.trim() ||
+        property.documentPdf.downloadUrl?.trim() ||
+        "",
+    );
 
-    const upstream = await fetch(sourceUrl);
+    if (!sourceUrl) {
+      return res.status(404).json({
+        success: false,
+        message: "No brochure PDF available for this property",
+      });
+    }
+
+    const upstream = await fetch(sourceUrl, {
+      headers: { Accept: "application/pdf,application/octet-stream,*/*" },
+    });
     if (!upstream.ok) {
       console.error(
         "Brochure fetch failed:",
@@ -494,6 +505,20 @@ export const downloadPropertyBrochure = async (req, res) => {
     }
 
     const buffer = Buffer.from(await upstream.arrayBuffer());
+    const isPdf =
+      buffer.length >= 4 && buffer.subarray(0, 4).toString("utf8") === "%PDF";
+    if (!isPdf) {
+      console.error(
+        "Brochure is not a PDF:",
+        sourceUrl,
+        buffer.subarray(0, 32).toString("utf8"),
+      );
+      return res.status(502).json({
+        success: false,
+        message: "Stored brochure file is not a valid PDF",
+      });
+    }
+
     const safeName = fileName.replace(/"/g, "");
 
     res.setHeader("Content-Type", "application/pdf");
@@ -533,9 +558,9 @@ export const getProperty = async (req, res) => {
     if (payload.documentPdf?.url?.trim()) {
       const fileName = resolveBrochureFileName(payload);
       payload.documentPdf.fileName = fileName;
-      payload.documentPdf.downloadUrl =
-        payload.documentPdf.downloadUrl?.trim() ||
-        getCloudinaryPdfDownloadUrl(payload.documentPdf.url, fileName);
+      payload.documentPdf.downloadUrl = getCloudinaryPdfDeliveryUrl(
+        payload.documentPdf.url,
+      );
     }
 
     return res.status(200).json({
