@@ -3,10 +3,14 @@ import Inquiry from "../models/Inquiry.js";
 import {
   getCloudinaryAssetUrl,
   getCloudinaryConfigErrorMessage,
+  fetchCloudinaryRawBuffer,
   getCloudinaryPdfDeliveryUrl,
   isCloudinaryConfigured,
+  parseCloudinaryRawAsset,
   uploadMulterFile,
+  verifyCloudinaryRawDelivery,
 } from "../utils/cloudinary.js";
+import { v2 as cloudinary } from "cloudinary";
 
 const isOffPlanCategory = (value = "") => {
   const key = String(value).trim().toLowerCase().replace(/[\s-]+/g, "_");
@@ -63,11 +67,36 @@ async function uploadPropertyDocumentPdf(file) {
     );
   }
 
+  const canDeliver = await verifyCloudinaryRawDelivery(url);
+  if (!canDeliver) {
+    const publicId = result.public_id
+      ? result.folder
+        ? `${result.folder}/${result.public_id}`
+        : result.public_id
+      : "";
+    if (publicId) {
+      try {
+        await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+      } catch (destroyError) {
+        console.error("Failed to remove undeliverable PDF:", destroyError.message);
+      }
+    }
+    throw new Error(
+      "PDF upload succeeded but delivery is blocked. Re-upload the brochure, or in Cloudinary go to Settings → Security and enable “Allow delivery of PDF and ZIP files”.",
+    );
+  }
+
   const fileName = file.originalname || "property-brochure.pdf";
+  const parsed = parseCloudinaryRawAsset(url);
   return {
     url,
     fileName,
     downloadUrl: getCloudinaryPdfDeliveryUrl(url),
+    publicId: result.public_id
+      ? result.folder
+        ? `${result.folder}/${result.public_id}`
+        : result.public_id
+      : parsed?.publicId || "",
   };
 }
 
@@ -489,22 +518,22 @@ export const downloadPropertyBrochure = async (req, res) => {
       });
     }
 
-    const upstream = await fetch(sourceUrl, {
-      headers: { Accept: "application/pdf,application/octet-stream,*/*" },
-    });
-    if (!upstream.ok) {
-      console.error(
-        "Brochure fetch failed:",
-        upstream.status,
-        sourceUrl,
-      );
+    let buffer;
+    try {
+      const storedPublicId = property.documentPdf.publicId?.trim();
+      buffer = storedPublicId
+        ? await fetchCloudinaryRawBuffer(sourceUrl, storedPublicId)
+        : await fetchCloudinaryRawBuffer(sourceUrl);
+    } catch (fetchError) {
+      console.error("Brochure fetch failed:", fetchError.message, sourceUrl);
+      const needsReupload = sourceUrl.toLowerCase().includes(".pdf");
       return res.status(502).json({
         success: false,
-        message: "Failed to retrieve PDF from storage",
+        message: needsReupload
+          ? "This brochure cannot be downloaded (Cloudinary blocked it). Edit the property in admin and upload the PDF again."
+          : "Failed to retrieve PDF from storage",
       });
     }
-
-    const buffer = Buffer.from(await upstream.arrayBuffer());
     const isPdf =
       buffer.length >= 4 && buffer.subarray(0, 4).toString("utf8") === "%PDF";
     if (!isPdf) {

@@ -83,6 +83,7 @@ const propertySchema = new mongoose.Schema(
       url: { type: String, default: "" },
       fileName: { type: String, default: "" },
       downloadUrl: { type: String, default: "" },
+      publicId: { type: String, default: "" },
     },
 
     location: {

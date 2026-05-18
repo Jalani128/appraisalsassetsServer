@@ -22,15 +22,26 @@ export const getCloudinaryAssetUrl = (result) =>
   result?.secure_url || result?.url || "";
 
 /** Safe public_id for raw PDF uploads (extension required for correct delivery). */
+/** Cloudinary blocks delivery (401) when public_id ends with ".pdf" — never include it. */
 export function buildPdfPublicId(originalname) {
   let name = String(originalname || "property-brochure.pdf")
     .replace(/^.*[\\/]/, "")
+    .replace(/\.pdf$/i, "")
     .replace(/[^a-zA-Z0-9._-]/g, "_")
     .slice(0, 80);
-  if (!name.toLowerCase().endsWith(".pdf")) {
-    name = `${name}.pdf`;
-  }
+  if (!name) name = "property-brochure";
   return `${Date.now()}_${name}`;
+}
+
+export async function verifyCloudinaryRawDelivery(url) {
+  const deliveryUrl = getCloudinaryPdfDeliveryUrl(url);
+  if (!deliveryUrl) return false;
+  const response = await fetch(deliveryUrl, { method: "HEAD" });
+  if (response.status === 405) {
+    const getResponse = await fetch(deliveryUrl);
+    return getResponse.ok;
+  }
+  return response.ok;
 }
 
 /** Strip broken fl_attachment segments; delivery filename is set by our API. */
@@ -42,11 +53,88 @@ export function getCloudinaryPdfDeliveryUrl(url) {
   return url.replace(/\/fl_attachment:[^/]+\//, "/");
 }
 
+/** Extract folder + public_id from a Cloudinary raw delivery URL. */
+export function parseCloudinaryRawAsset(url) {
+  if (!url?.includes("res.cloudinary.com")) return null;
+  const path = url.split("?")[0];
+  const match = path.match(/\/raw\/upload\/(?:v\d+\/)?(.+)$/i);
+  if (!match) return null;
+  return { publicId: decodeURIComponent(match[1]) };
+}
+
+export function getSignedCloudinaryRawUrl(publicId, type = "upload") {
+  if (!publicId || !isCloudinaryConfigured()) return "";
+  return cloudinary.url(publicId, {
+    resource_type: "raw",
+    type,
+    sign_url: true,
+    secure: true,
+  });
+}
+
+/** Fetch raw PDF bytes; retries with signed URLs when Cloudinary returns 401/403. */
+export async function fetchCloudinaryRawBuffer(url, publicIdOverride = "") {
+  const deliveryUrl = getCloudinaryPdfDeliveryUrl(url);
+  if (!deliveryUrl) {
+    throw new Error("Missing Cloudinary URL");
+  }
+
+  const tryFetch = async (fetchUrl) => {
+    const response = await fetch(fetchUrl, {
+      headers: { Accept: "application/pdf,application/octet-stream,*/*" },
+    });
+    if (!response.ok) {
+      return { ok: false, status: response.status, response };
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { ok: true, buffer, status: response.status };
+  };
+
+  let result = await tryFetch(deliveryUrl);
+  if (result.ok) return result.buffer;
+
+  if (result.status !== 401 && result.status !== 403) {
+    throw new Error(`Cloudinary fetch failed (${result.status})`);
+  }
+
+  const asset = parseCloudinaryRawAsset(deliveryUrl);
+  const publicId = publicIdOverride || asset?.publicId;
+  if (!publicId) {
+    throw new Error("Could not parse Cloudinary asset for signed download");
+  }
+
+  for (const type of ["upload", "authenticated", "private"]) {
+    const signedUrl = getSignedCloudinaryRawUrl(publicId, type);
+    if (!signedUrl) continue;
+    result = await tryFetch(signedUrl);
+    if (result.ok) return result.buffer;
+  }
+
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  try {
+    const privateUrl = cloudinary.utils.private_download_url(
+      publicId.replace(/\.pdf$/i, ""),
+      "pdf",
+      { resource_type: "raw", expires_at: expiresAt },
+    );
+    if (privateUrl) {
+      result = await tryFetch(privateUrl);
+      if (result.ok) return result.buffer;
+    }
+  } catch (error) {
+    console.error("Cloudinary private_download_url failed:", error.message);
+  }
+
+  throw new Error(`Cloudinary fetch failed (${result.status})`);
+}
+
 function buildUploadParams(folder, options = {}) {
   const resourceType = options.resourceType || "auto";
   const params = {
     resource_type: resourceType,
     folder,
+    type: "upload",
+    access_mode: "public",
     use_filename: Boolean(options.useFilename ?? true),
     unique_filename: Boolean(options.uniqueFilename ?? true),
   };
@@ -54,10 +142,10 @@ function buildUploadParams(folder, options = {}) {
   if (options.publicId) {
     let id = String(options.publicId).replace(/^.*\//, "");
     if (resourceType === "raw") {
-      if (!id.toLowerCase().endsWith(".pdf")) {
-        id = `${id}.pdf`;
-      }
+      id = id.replace(/\.pdf$/i, "");
+      if (!id) id = `brochure_${Date.now()}`;
       params.public_id = id;
+      params.display_name = id;
     } else {
       params.public_id = id.replace(/\.pdf$/i, "");
       if (options.format) {
